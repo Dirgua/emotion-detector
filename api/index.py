@@ -38,9 +38,8 @@ def predict():
         open_cv_image = np.array(pil_image)
         open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
         
-        # Redimensionado controlado para procesar a máxima velocidad en milisegundos
-        frame_ligero = cv2.resize(open_cv_image, (320, 240))
-        gray_image = cv2.cvtColor(frame_ligero, cv2.COLOR_BGR2GRAY)
+        # No distorsionamos la imagen con un resize fijo para no arruinar las proporciones del rostro
+        gray_image = cv2.cvtColor(open_cv_image, cv2.COLOR_BGR2GRAY)
 
         # Detectar el contorno del rostro
         rostros = face_cascade.detectMultiScale(gray_image, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
@@ -54,8 +53,9 @@ def predict():
         face_roi = gray_image[y:y+h, x:x+w]
         face_roi_resized = cv2.resize(face_roi, (64, 64)) # El modelo FER+ requiere imágenes de 64x64
         
-        # Convertir a un "blob" (tensor 4D) que la red neuronal puede leer sin escalar los píxeles (0-255)
-        blob = cv2.dnn.blobFromImage(face_roi_resized, scalefactor=1.0, size=(64, 64))
+        # Convertir a un tensor 4D manualmente para evitar problemas de canales con OpenCV
+        face_roi_float = face_roi_resized.astype(np.float32)
+        blob = np.expand_dims(np.expand_dims(face_roi_float, axis=0), axis=0) # Shape: (1, 1, 64, 64)
         emotion_net.setInput(blob)
         
         # Inferencia: Paso frontal por la red neuronal
