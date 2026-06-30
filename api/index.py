@@ -16,9 +16,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # Detecta la ubicación de
 cascade_path = os.path.join(BASE_DIR, "haarcascade_frontalface_default.xml") # Ruta absoluta del modelo XML
 face_cascade = cv2.CascadeClassifier(cascade_path) # Carga el clasificador base de rostros
 
-# Cargar clasificadores para heurística de expresiones
-smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
-eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+onnx_model_path = os.path.join(BASE_DIR, "emotion-ferplus-8.onnx") # Ruta del modelo real de IA
+emotion_net = cv2.dnn.readNetFromONNX(onnx_model_path) # Carga la red neuronal profunda en memoria
 
 EMOCIONES = ["Felicidad", "Tristeza", "Ira", "Sorpresa", "Neutral"] # Lista oficial
 
@@ -58,53 +57,40 @@ def predict():
 
         (x, y, w, h) = rostros[0]
         
-        # Lógica Analítica Heurística de Expresiones (Sin IA Externa)
-        # Puntuaciones base (predisposición inicial al estado Neutral)
-        puntajes = {"Felicidad": 5, "Tristeza": 10, "Ira": 10, "Sorpresa": 5, "Neutral": 40}
+        # Expandir la caja delimitadora (Bounding Box) un 25% para no cortar la barbilla ni la frente
+        # Esto soluciona el problema de recortar la boca en las sonrisas
+        margin_x = int(w * 0.25)
+        margin_y = int(h * 0.25)
+        x1 = max(0, x - margin_x)
+        y1 = max(0, y - margin_y)
+        x2 = min(gray_image.shape[1], x + w + margin_x)
+        y2 = min(gray_image.shape[0], y + h + margin_y)
         
-        # 1. Análisis de Sonrisa (Felicidad)
-        # La boca se ubica aproximadamente en el 40% inferior del rostro
-        boca_roi = gray_image[y + int(h*0.6):y+h, x:x+w]
-        smiles = smile_cascade.detectMultiScale(boca_roi, scaleFactor=1.3, minNeighbors=20, minSize=(w//5, h//8))
+        # Preprocesamiento real para la Inteligencia Artificial (Red Neuronal) con el rostro COMPLETO
+        face_roi = gray_image[y1:y2, x1:x2]
+        face_roi_resized = cv2.resize(face_roi, (64, 64)) # El modelo FER+ requiere imágenes de 64x64
         
-        if len(smiles) > 0:
-            puntajes["Felicidad"] += 80
-            puntajes["Neutral"] -= 20
-            
-        # 2. Análisis de Ojos (Sorpresa / Ira)
-        # Los ojos se ubican en el tercio medio superior
-        ojos_roi = gray_image[y + int(h*0.2):y + int(h*0.55), x:x+w]
-        eyes = eye_cascade.detectMultiScale(ojos_roi, scaleFactor=1.1, minNeighbors=7, minSize=(w//6, h//6))
+        # Convertir a un tensor 4D seguro usando la función nativa de OpenCV
+        # IMPORTANTE: El scalefactor debe ser 1.0/255.0 para normalizar los píxeles de 0-255 a 0-1.
+        blob = cv2.dnn.blobFromImage(face_roi_resized, scalefactor=1.0/255.0, size=(64, 64))
+        emotion_net.setInput(blob)
         
-        if len(eyes) >= 2:
-            # Calcular apertura promedio de los ojos
-            alturas_ojos = [e[3] for e in eyes]
-            avg_h = sum(alturas_ojos) / len(alturas_ojos)
-            proporcion_ojo = avg_h / h
-            
-            if proporcion_ojo > 0.16: # Ojos muy abiertos (indicador clásico de Sorpresa)
-                puntajes["Sorpresa"] += 70
-                puntajes["Neutral"] -= 10
-            elif proporcion_ojo < 0.11: # Ojos entrecerrados (Ira profunda o tristeza)
-                puntajes["Ira"] += 40
-                puntajes["Tristeza"] += 20
-                
-        # 3. Análisis del Ceño (Ira) usando sombras e intensidad de píxeles
-        # El entrecejo está entre los ojos
-        entrecejo_roi = gray_image[y + int(h*0.15):y + int(h*0.3), x + int(w*0.3):x + int(w*0.7)]
-        if entrecejo_roi.size > 0:
-            # Convertir a binario resaltando las sombras fuertes del ceño fruncido
-            _, thresh = cv2.threshold(entrecejo_roi, 60, 255, cv2.THRESH_BINARY_INV)
-            sombra_entrecejo = cv2.countNonZero(thresh) / entrecejo_roi.size
-            if sombra_entrecejo > 0.3: # Si hay mucha sombra en el ceño
-                puntajes["Ira"] += 50
-                puntajes["Neutral"] -= 15
-                
-        # 4. Asegurar que no existan puntajes negativos y dar fluidez
-        mapped_probs = {}
-        for emo in puntajes:
-            # Añadir pequeña variabilidad orgánica (ruido simulado) para que se vea en vivo
-            mapped_probs[emo] = max(1, puntajes[emo] + random.randint(1, 5))
+        # Inferencia: Paso frontal por la red neuronal
+        preds = emotion_net.forward()[0]
+        
+        # Función Softmax matemática para convertir los valores brutos (logits) en probabilidades (0 a 1)
+        exp_preds = np.exp(preds - np.max(preds))
+        probs = exp_preds / np.sum(exp_preds)
+        
+        # El modelo FER+ tiene 8 clases: 0:Neutral, 1:Felicidad, 2:Sorpresa, 3:Tristeza, 4:Ira, 5:Disgusto, 6:Miedo, 7:Desprecio
+        # Filtramos y mapeamos a nuestras 5 emociones oficiales requeridas
+        mapped_probs = {
+            "Neutral": probs[0],
+            "Felicidad": probs[1],
+            "Sorpresa": probs[2],
+            "Tristeza": probs[3],
+            "Ira": probs[4]
+        }
         
         # Normalizamos las probabilidades para que entre las 5 sumen exactamente el 100%
         total_prob = sum(mapped_probs.values())
