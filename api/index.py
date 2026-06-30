@@ -38,7 +38,15 @@ def predict():
         open_cv_image = np.array(pil_image)
         open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
         
-        # No distorsionamos la imagen con un resize fijo para no arruinar las proporciones del rostro
+        # Redimensionado PROPORCIONAL para evitar colapsos de memoria (OOM) o timeouts en Vercel
+        # Mantiene el aspect ratio intacto para no deformar el rostro y confundir a la IA.
+        max_width = 500
+        alto, ancho = open_cv_image.shape[:2]
+        if ancho > max_width:
+            proporcion = max_width / ancho
+            nuevo_alto = int(alto * proporcion)
+            open_cv_image = cv2.resize(open_cv_image, (max_width, nuevo_alto))
+
         gray_image = cv2.cvtColor(open_cv_image, cv2.COLOR_BGR2GRAY)
 
         # Detectar el contorno del rostro
