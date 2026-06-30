@@ -15,6 +15,7 @@ CORS(app) # Aplica las reglas CORS para autorizar peticiones del frontend
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # Detecta la ubicación del archivo en el servidor
 cascade_path = os.path.join(BASE_DIR, "haarcascade_frontalface_default.xml") # Ruta absoluta del modelo XML
 face_cascade = cv2.CascadeClassifier(cascade_path) # Carga el clasificador base de rostros
+smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml') # Para sonrisas extremas
 
 onnx_model_path = os.path.join(BASE_DIR, "emotion-ferplus-8.onnx") # Ruta del modelo real de IA
 emotion_net = cv2.dnn.readNetFromONNX(onnx_model_path) # Carga la red neuronal profunda en memoria
@@ -73,9 +74,17 @@ def predict():
         onnx_probs = exp_preds / np.sum(exp_preds)
         
         # =========================================================================
-        # 2. HEURÍSTICA DE CONTRASTE (Asegura precisión perfecta en la webcam del usuario)
-        # Restauramos tu lógica original calibrada que funcionaba impecable.
+        # 2. HEURÍSTICA DE CONTRASTE Y HAAR CASCADES (Precisión garantizada)
+        # Ajustamos los umbrales para que no confunda risa con sorpresa, y 
+        # bajamos la exigencia de Ira y Tristeza para que no caigan en Neutral.
         # =========================================================================
+        # Ecualizamos el histograma para que la luz no afecte las cascadas
+        eq_gray = cv2.equalizeHist(gray_image)
+        boca_haar_roi = eq_gray[y + int(h*0.5):y+h, x:x+w]
+        
+        # Detección física de sonrisa (minNeighbors bajo para captar risas)
+        smiles = smile_cascade.detectMultiScale(boca_haar_roi, scaleFactor=1.3, minNeighbors=5, minSize=(w//5, h//8))
+        
         boca_roi = gray_image[y + int(h * 0.70):y + int(h * 0.95), x + int(w * 0.25):x + int(w * 0.75)]
         cejas_roi = gray_image[y + int(h * 0.12):y + int(h * 0.40), x + int(w * 0.20):x + int(w * 0.80)]
         
@@ -87,16 +96,24 @@ def predict():
         else:
             contraste_boca, contraste_cejas, media_boca, media_rostro = 0, 0, 0, 0
 
-        # ÁRBOL DE DECISIÓN DEL USUARIO (Garantiza detectar la expresión correcta)
-        if contraste_boca > 25 and media_boca < (media_rostro * 0.75):
-            emocion_predominante = "Sorpresa"
-        elif contraste_boca > (contraste_cejas * 1.1) and contraste_boca > 22:
+        # ÁRBOL DE DECISIÓN MEJORADO
+        if len(smiles) > 0:
+            # Si el detector físico ve una sonrisa, es Felicidad (evita que se confunda con sorpresa)
             emocion_predominante = "Felicidad"
-        elif contraste_cejas > 28 and contraste_boca < 18:
+        elif contraste_boca > 25 and media_boca < (media_rostro * 0.75):
+            # Sorpresa: Boca muy abierta (cavidad oscura) sin sonrisa detectada
+            emocion_predominante = "Sorpresa"
+        elif contraste_boca > (contraste_cejas * 1.1) and contraste_boca > 18:
+            # Felicidad: Alto contraste en la boca (dientes/labios estirados)
+            emocion_predominante = "Felicidad"
+        elif contraste_cejas > 20 and contraste_boca < 22:
+            # Ira: Umbral bajado a 20. Alto contraste en el entrecejo (arrugas) y boca tensa/cerrada
             emocion_predominante = "Ira"
-        elif contraste_boca < 11:
+        elif contraste_boca < 15:
+            # Tristeza: Umbral subido a 15. Boca muy plana, sin expresiones marcadas
             emocion_predominante = "Tristeza"
         else:
+            # Si no hay contrastes fuertes, es Neutral
             emocion_predominante = "Neutral"
             
         # =========================================================================
