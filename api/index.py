@@ -74,47 +74,44 @@ def predict():
         onnx_probs = exp_preds / np.sum(exp_preds)
         
         # =========================================================================
-        # 2. HEURÍSTICA DE CONTRASTE Y HAAR CASCADES (Precisión garantizada)
-        # Ajustamos los umbrales para que no confunda risa con sorpresa, y 
-        # bajamos la exigencia de Ira y Tristeza para que no caigan en Neutral.
+        # 2. HEURÍSTICA PROFESIONAL INVARIANTE A LA LUZ (Feature Engineering)
         # =========================================================================
-        # Ecualizamos el histograma para que la luz no afecte las cascadas
+        # Ecualizamos la imagen completa para que la luz y la calidad de la cámara NO afecten
+        # los contrastes. Esto estira el rango de píxeles de 0 a 255 siempre.
         eq_gray = cv2.equalizeHist(gray_image)
-        boca_haar_roi = eq_gray[y + int(h*0.5):y+h, x:x+w]
         
-        # Detección física de sonrisa (minNeighbors bajo para captar risas)
+        # Detección física de sonrisa (refuerzo)
+        boca_haar_roi = eq_gray[y + int(h*0.5):y+h, x:x+w]
         smiles = smile_cascade.detectMultiScale(boca_haar_roi, scaleFactor=1.3, minNeighbors=5, minSize=(w//5, h//8))
         
-        boca_roi = gray_image[y + int(h * 0.70):y + int(h * 0.95), x + int(w * 0.25):x + int(w * 0.75)]
-        cejas_roi = gray_image[y + int(h * 0.12):y + int(h * 0.40), x + int(w * 0.20):x + int(w * 0.80)]
+        # Extraemos las ROI de la imagen ecualizada para una precisión matemática absoluta
+        boca_roi = eq_gray[y + int(h * 0.70):y + int(h * 0.95), x + int(w * 0.25):x + int(w * 0.75)]
+        cejas_roi = eq_gray[y + int(h * 0.12):y + int(h * 0.40), x + int(w * 0.20):x + int(w * 0.80)]
         
         if boca_roi.size > 0 and cejas_roi.size > 0:
             contraste_boca = np.std(boca_roi)
             contraste_cejas = np.std(cejas_roi)
-            media_boca = np.mean(boca_roi)
-            media_rostro = np.mean(gray_image[y:y+h, x:x+w])
         else:
-            contraste_boca, contraste_cejas, media_boca, media_rostro = 0, 0, 0, 0
+            contraste_boca, contraste_cejas = 0, 0
+            
+        ratio_bc = contraste_boca / (contraste_cejas + 1e-5) # Proporción de expresividad
 
-        # ÁRBOL DE DECISIÓN MEJORADO
-        if len(smiles) > 0:
-            # Si el detector físico ve una sonrisa, es Felicidad (evita que se confunda con sorpresa)
+        # ÁRBOL DE DECISIÓN MATEMÁTICO (Ajustado para fotos HD y webcam)
+        if len(smiles) > 0 or ratio_bc > 1.35:
+            # Felicidad: La boca se estira enormemente, superando con creces el contraste del resto de la cara
             emocion_predominante = "Felicidad"
-        elif contraste_boca > 25 and media_boca < (media_rostro * 0.75):
-            # Sorpresa: Boca muy abierta (cavidad oscura) sin sonrisa detectada
+        elif ratio_bc > 1.15:
+            # Sorpresa: Boca abierta verticalmente, genera alta desviación estándar, pero sin forma de sonrisa
             emocion_predominante = "Sorpresa"
-        elif contraste_boca > (contraste_cejas * 1.1) and contraste_boca > 18:
-            # Felicidad: Alto contraste en la boca (dientes/labios estirados)
-            emocion_predominante = "Felicidad"
-        elif contraste_cejas > 20 and contraste_boca < 22:
-            # Ira: Umbral bajado a 20. Alto contraste en el entrecejo (arrugas) y boca tensa/cerrada
-            emocion_predominante = "Ira"
-        elif contraste_boca < 15:
-            # Tristeza: Umbral subido a 15. Boca muy plana, sin expresiones marcadas
-            emocion_predominante = "Tristeza"
-        else:
-            # Si no hay contrastes fuertes, es Neutral
+        elif contraste_boca < 25 and contraste_cejas < 40:
+            # Neutral: Rostro completamente relajado, los relieves ecualizados son mínimos
             emocion_predominante = "Neutral"
+        elif contraste_cejas > 50 and ratio_bc < 0.70:
+            # Ira: El ceño intensamente fruncido dispara el contraste de las cejas, mientras la boca está tensa y cerrada
+            emocion_predominante = "Ira"
+        else:
+            # Tristeza: Las cejas se arquean y la boca se deprime (ambos tienen contraste medio-alto, ratio equilibrado)
+            emocion_predominante = "Tristeza"
             
         # =========================================================================
         # 3. ENSEMBLE FINAL (Fusión para la UI)
