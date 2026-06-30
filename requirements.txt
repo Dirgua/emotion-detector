@@ -8,7 +8,7 @@ flask-cors==4.0.1
 opencv-python-headless==4.10.0.84
 
 # Manejo y cálculo matemático de las imágenes estructuradas como matrices
-numpy==2.1.2
+numpy
 
 # Manipulación, apertura y conversión de formatos de archivos gráficos
 Pillow==11.0.0

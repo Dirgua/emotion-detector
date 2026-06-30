@@ -34,7 +34,7 @@ btnStart.addEventListener('click', async () => { // Escucha el evento de click s
         video.classList.remove('hidden'); // Transforma el estado del reproductor haciéndolo visible al usuario
         cameraPlaceholder.classList.add('hidden'); // Remueve de la pantalla el fondo gris o logo provisional de espera
         btnCapture.disabled = false; // Remueve el bloqueo del botón disparador habilitando la captura de datos
-        btnStart.textContent = "🔄 Cámara Activa"; // Modifica la etiqueta de texto del botón para reflejar el estado actual
+        btnStart.textContent = "Cámara Activa"; // Modifica la etiqueta de texto del botón para reflejar el estado actual
     } catch (err) { // Captura denegaciones de permisos o fallos de conexión del dispositivo físico
         showError("Error al acceder a la cámara."); // Lanza la alerta en pantalla notificando la restricción de acceso
     } // Cierre de la estructura de manejo de excepciones
@@ -77,7 +77,7 @@ async function sendImageToBackend(base64String) { // Función asíncrona dedicad
     idleMessage.classList.add('hidden'); // Oculta el mensaje informativo por defecto de la aplicación
 
     try { // Apertura de bloque de seguridad para transacciones de red HTTP
-        const response = await fetch('http://127.0.0.1:5000/api/predict', { // Realiza la petición Fetch hacia el endpoint local de Python
+        const response = await fetch('/api/predict', { // Realiza la petición Fetch hacia el endpoint local de Python
             method: 'POST', // Configura el método de comunicación de tipo envío de datos persistentes
             headers: { 'Content-Type': 'application/json' }, // Define el encabezado indicando el envío de datos estructurados en formato JSON
             body: JSON.stringify({ image: base64String }) // Empaqueta el string Base64 dentro del cuerpo de la petición HTTP
