@@ -38,9 +38,9 @@ def predict():
         open_cv_image = np.array(pil_image)
         open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
         
-        # Redimensionado PROPORCIONAL para evitar colapsos de memoria (OOM) o timeouts en Vercel
-        # Mantiene el aspect ratio intacto para no deformar el rostro y confundir a la IA.
-        max_width = 500
+        # Redimensionado PROPORCIONAL para evitar Timeouts y procesamiento excesivo en Vercel
+        # En la capa gratuita, el CPU es muy limitado, por lo que analizamos a una resolución óptima.
+        max_width = 300
         alto, ancho = open_cv_image.shape[:2]
         if ancho > max_width:
             proporcion = max_width / ancho
@@ -49,8 +49,8 @@ def predict():
 
         gray_image = cv2.cvtColor(open_cv_image, cv2.COLOR_BGR2GRAY)
 
-        # Detectar el contorno del rostro
-        rostros = face_cascade.detectMultiScale(gray_image, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
+        # Detectar el contorno del rostro (optimizado para velocidad en CPU serverless)
+        rostros = face_cascade.detectMultiScale(gray_image, scaleFactor=1.3, minNeighbors=5, minSize=(40, 40))
 
         if len(rostros) == 0:
             return jsonify({"error": "No se detectaron rostros."}), 200
