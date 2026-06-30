@@ -61,8 +61,10 @@ def predict():
         face_roi = gray_image[y:y+h, x:x+w]
         face_roi_resized = cv2.resize(face_roi, (64, 64)) # El modelo FER+ requiere imágenes de 64x64
         
-        # Convertir a un tensor 4D seguro usando la función nativa de OpenCV para evitar caídas de memoria
-        blob = cv2.dnn.blobFromImage(face_roi_resized, scalefactor=1.0, size=(64, 64))
+        # Convertir a un tensor 4D seguro usando la función nativa de OpenCV
+        # IMPORTANTE: El scalefactor debe ser 1.0/255.0 para normalizar los píxeles de 0-255 a 0-1.
+        # Si enviamos píxeles crudos (1.0), los valores explotan y la IA se confunde.
+        blob = cv2.dnn.blobFromImage(face_roi_resized, scalefactor=1.0/255.0, size=(64, 64))
         emotion_net.setInput(blob)
         
         # Inferencia: Paso frontal por la red neuronal
