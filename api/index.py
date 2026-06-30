@@ -2,14 +2,24 @@ import base64 # Librería para decodificar la cadena de texto de la imagen
 import os # Permite interactuar con las rutas de archivos del sistema
 import random # Generador de números para estabilizar porcentajes visuales del frontend
 from io import BytesIO # Crea un espacio de almacenamiento intermedio en la memoria RAM
-from flask import Flask, jsonify, request # Componentes clave para estructurar la API web
+from flask import Flask, jsonify, request, send_from_directory # Componentes clave para estructurar la API web
 from flask_cors import CORS # Extensión para habilitar los permisos de conexión externa
 import cv2 # OpenCV: Librería principal encargada de la visión artificial
 import numpy as np # Maneja la imagen estructurada como una matriz numérica
 from PIL import Image # Valida y manipula perfiles de formato gráfico
 
-app = Flask(__name__) # Inicializa la aplicación del servidor web Flask
+app = Flask(__name__, static_folder='../public', static_url_path='/') # Inicializa la aplicación del servidor web Flask
 CORS(app) # Aplica las reglas CORS para autorizar peticiones del frontend
+
+@app.route('/')
+def index():
+    return app.send_static_file('index.html')
+
+@app.route('/<path:path>')
+def static_proxy(path):
+    # Solo sirve archivos si existen, si no delega al 404
+    return app.send_static_file(path)
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # Detecta la ubicación del archivo en el servidor
 cascade_path = os.path.join(BASE_DIR, "haarcascade_frontalface_default.xml") # Ruta absoluta del modelo XML
