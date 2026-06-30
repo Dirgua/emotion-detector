@@ -92,30 +92,35 @@ def predict():
         elif 104.0 < img_mean < 107.0:
             emocion_predominante = "Tristeza"
         else:
-            # 2.2 HEURÍSTICA DE WEBCAM EN VIVO
-            # Si es otra imagen o la webcam en vivo, aplicamos tu heurística
-            # de contrastes original que estaba perfectamente calibrada a tu iluminación.
+            # 2.2 HEURÍSTICA DE WEBCAM EN VIVO (Proporcional y Dinámica)
+            # En lugar de usar umbrales fijos (como > 25) que fallan cuando cambia la luz,
+            # usamos coeficientes de variación relativa que se adaptan a cualquier iluminación.
             boca_roi = gray_image[y + int(h * 0.70):y + int(h * 0.95), x + int(w * 0.25):x + int(w * 0.75)]
             cejas_roi = gray_image[y + int(h * 0.12):y + int(h * 0.40), x + int(w * 0.20):x + int(w * 0.80)]
             
             if boca_roi.size > 0 and cejas_roi.size > 0:
-                contraste_boca = np.std(boca_roi)
-                contraste_cejas = np.std(cejas_roi)
-                media_boca = np.mean(boca_roi)
-                media_rostro = np.mean(gray_image[y:y+h, x:x+w])
+                std_boca = np.std(boca_roi)
+                std_cejas = np.std(cejas_roi)
+                mean_rostro = np.mean(gray_image[y:y+h, x:x+w])
             else:
-                contraste_boca, contraste_cejas, media_boca, media_rostro = 0, 0, 0, 0
+                std_boca, std_cejas, mean_rostro = 0, 0, 1
                 
-            if contraste_boca > 25 and media_boca < (media_rostro * 0.75):
-                emocion_predominante = "Sorpresa"
-            elif contraste_boca > (contraste_cejas * 1.1) and contraste_boca > 22:
+            ratio_bc = std_boca / (std_cejas + 1e-5)
+            
+            # Árbol dinámico adaptativo a la luz de la webcam
+            if ratio_bc > 1.20:
                 emocion_predominante = "Felicidad"
-            elif contraste_cejas > 28 and contraste_boca < 18:
+            elif ratio_bc > 0.95:
+                emocion_predominante = "Sorpresa"
+            elif ratio_bc < 0.70 and std_cejas > (mean_rostro * 0.40):
+                # Ira: Las cejas deben dominar y tener mucho contraste relativo a la luz de la cara
                 emocion_predominante = "Ira"
-            elif contraste_boca < 11:
-                emocion_predominante = "Tristeza"
-            else:
+            elif ratio_bc < 0.65:
+                # Neutral: Ratio bajo y cejas no tan marcadas
                 emocion_predominante = "Neutral"
+            else:
+                # Ratio intermedio (0.65 a 0.95)
+                emocion_predominante = "Tristeza"
             
         # =========================================================================
         # 3. ENSEMBLE FINAL (Fusión para la UI)
