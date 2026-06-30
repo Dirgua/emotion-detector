@@ -94,37 +94,53 @@ def predict():
         elif 104.0 < img_mean < 107.0:
             emocion_predominante = "Tristeza"
         else:
-        else:
-            # 2.2 HEURÍSTICA DE WEBCAM (Zonas Dinámicas Centradas)
-            # Primero, extraemos sólo el "núcleo" del rostro (sin pelo ni cuello)
+            # 2.2 HEURÍSTICA BASADA EN PARTES Y RASGOS FÍSICOS (Solicitud del Usuario)
             cy = y + int(h * 0.20)
             ch = int(h * 0.65)
             
-            # Cejas: tercio superior del núcleo
+            # Recortes exactos de las zonas de interés
             cejas_roi = gray_image[cy:cy + int(ch * 0.33), x + int(w * 0.2):x + int(w * 0.8)]
-            # Boca: tercio inferior del núcleo
             boca_roi = gray_image[cy + int(ch * 0.66):cy + ch, x + int(w * 0.25):x + int(w * 0.75)]
             
             if boca_roi.size > 0 and cejas_roi.size > 0:
-                std_boca = np.std(boca_roi)
-                std_cejas = np.std(cejas_roi)
                 mean_rostro = np.mean(gray_image[y:y+h, x:x+w])
-            else:
-                std_boca, std_cejas, mean_rostro = 0, 0, 1
                 
-            ratio_bc = std_boca / (std_cejas + 1e-5)
-            
-            # Umbrales dinámicos adaptativos
-            if ratio_bc > 1.30:
-                emocion_predominante = "Felicidad"
-            elif ratio_bc > 1.05:
-                emocion_predominante = "Sorpresa"
-            elif ratio_bc < 0.80 and std_cejas > (mean_rostro * 0.30):
-                emocion_predominante = "Ira"
-            elif ratio_bc < 0.75:
-                emocion_predominante = "Neutral"
+                # 1. Detectar sonrisa o dientes (Cascade con sensibilidad ajustada a webcam)
+                smiles = smile_cascade.detectMultiScale(boca_roi, scaleFactor=1.3, minNeighbors=4, minSize=(w//8, h//10))
+                hay_sonrisa_o_dientes = len(smiles) > 0
+                
+                # 2. Detectar boca abierta sin dientes (Sorpresa: concentración de oscuridad)
+                _, dark_mouth = cv2.threshold(boca_roi, mean_rostro * 0.5, 255, cv2.THRESH_BINARY_INV)
+                apertura_oscura = (cv2.countNonZero(dark_mouth) / boca_roi.size) > 0.08
+                
+                # 3. Detectar ceño fruncido / cejas bajas (Ira: sombras verticales)
+                entrecejo = cejas_roi[:, int(cejas_roi.shape[1]*0.3):int(cejas_roi.shape[1]*0.7)]
+                _, dark_frown = cv2.threshold(entrecejo, mean_rostro * 0.65, 255, cv2.THRESH_BINARY_INV)
+                ceno_fruncido = (cv2.countNonZero(dark_frown) / entrecejo.size) > 0.12
+                
+                # 4. Detectar relajación o expresiones bajas (Tristeza)
+                std_rostro = np.std(gray_image[y:y+h, x:x+w])
+                baja_expresion = std_rostro < 35
+                
+                # ========================================================
+                # ÁRBOL DE DECISIONES (Lógica solicitada por el usuario)
+                # ========================================================
+                if ceno_fruncido and (hay_sonrisa_o_dientes or not apertura_oscura):
+                    # "si frunce el ceño, muestra los dientes, baja las cejas sea ira"
+                    emocion_predominante = "Ira"
+                elif hay_sonrisa_o_dientes and not ceno_fruncido:
+                    # "si ves una sonrisa y hay diente o abre la boca y hay dientes, sea felicidad"
+                    emocion_predominante = "Felicidad"
+                elif apertura_oscura and not hay_sonrisa_o_dientes:
+                    # "si solo abre la boca y no se ven los dientes, sorpresa"
+                    emocion_predominante = "Sorpresa"
+                elif baja_expresion or (not ceno_fruncido and not hay_sonrisa_o_dientes and not apertura_oscura):
+                    # "si sus expresiones son bajas, son cejas relajadas, sus ojos caidos, sea de tristeza"
+                    emocion_predominante = "Tristeza"
+                else:
+                    emocion_predominante = "Neutral"
             else:
-                emocion_predominante = "Tristeza"
+                emocion_predominante = "Neutral"
             
         # =========================================================================
         # 3. CONSTRUCCIÓN DE PROBABILIDADES (UI)
