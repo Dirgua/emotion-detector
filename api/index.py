@@ -16,6 +16,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # Detecta la ubicación de
 cascade_path = os.path.join(BASE_DIR, "haarcascade_frontalface_default.xml") # Ruta absoluta del modelo XML
 face_cascade = cv2.CascadeClassifier(cascade_path) # Carga el clasificador base de rostros
 
+onnx_model_path = os.path.join(BASE_DIR, "emotion-ferplus-8.onnx") # Ruta del modelo real de IA
+emotion_net = cv2.dnn.readNetFromONNX(onnx_model_path) # Carga la red neuronal profunda en memoria
+
 EMOCIONES = ["Felicidad", "Tristeza", "Ira", "Sorpresa", "Neutral"] # Lista oficial
 
 @app.route("/api/predict", methods=["POST"]) # Configura el punto de acceso para recibir datos
@@ -47,50 +50,44 @@ def predict():
 
         (x, y, w, h) = rostros[0]
         
-        # Segmentación precisa: Extraemos la zona anatómica de la boca (25% inferior central)
-        boca_roi = gray_image[y + int(h * 0.70):y + int(h * 0.95), x + int(w * 0.25):x + int(w * 0.75)]
-        # Extraemos la zona de las cejas (entre el 15% y 40% superior)
-        cejas_roi = gray_image[y + int(h * 0.12):y + int(h * 0.40), x + int(w * 0.20):x + int(w * 0.80)]
+        # Preprocesamiento real para la Inteligencia Artificial (Red Neuronal)
+        face_roi = gray_image[y:y+h, x:x+w]
+        face_roi_resized = cv2.resize(face_roi, (64, 64)) # El modelo FER+ requiere imágenes de 64x64
         
-        # Métricas de textura e iluminación (Desviación estándar y media)
-        contraste_boca = np.std(boca_roi)
-        contraste_cejas = np.std(cejas_roi)
-        media_boca = np.mean(boca_roi)
-        media_rostro = np.mean(gray_image[y:y+h, x:x+w])
-
-        # ÁRBOL DE DECISIÓN COMPENSADO DINÁMICAMENTE
-        # Se compara el contraste de las facciones contra sí mismas para evitar estancamientos
-        if contraste_boca > 25 and media_boca < (media_rostro * 0.75):
-            # Hay un vacío oscuro en el área de los labios respecto al tono de piel -> Boca abierta
-            emocion_predominante = "Sorpresa"
-        elif contraste_boca > (contraste_cejas * 1.1) and contraste_boca > 22:
-            # Los labios se estiran horizontalmente y marcan las comisuras (Alto relieve abajo)
-            emocion_predominante = "Felicidad"
-        elif contraste_cejas > 28 and contraste_boca < 18:
-            # Tensión/arrugas acumuladas en el entrecejo con labios rectos y apretados
-            emocion_predominante = "Ira"
-        elif contraste_boca < 11:
-            # La boca se aplana por completo sin relieve en las comisuras (Gesto decaído)
-            emocion_predominante = "Tristeza"
-        else:
-            # Rostro en reposo balanceado
-            emocion_predominante = "Neutral"
-
-        # Matriz de confianzas formateada para el frontend
+        # Convertir a un "blob" (tensor 4D) que la red neuronal puede leer
+        blob = cv2.dnn.blobFromImage(face_roi_resized, scalefactor=1.0/255.0, size=(64, 64))
+        emotion_net.setInput(blob)
+        
+        # Inferencia: Paso frontal por la red neuronal
+        preds = emotion_net.forward()[0]
+        
+        # Función Softmax matemática para convertir los valores brutos (logits) en probabilidades (0 a 1)
+        exp_preds = np.exp(preds - np.max(preds))
+        probs = exp_preds / np.sum(exp_preds)
+        
+        # El modelo FER+ tiene 8 clases: 0:Neutral, 1:Felicidad, 2:Sorpresa, 3:Tristeza, 4:Ira, 5:Disgusto, 6:Miedo, 7:Desprecio
+        # Filtramos y mapeamos a nuestras 5 emociones oficiales requeridas
+        mapped_probs = {
+            "Neutral": probs[0],
+            "Felicidad": probs[1],
+            "Sorpresa": probs[2],
+            "Tristeza": probs[3],
+            "Ira": probs[4]
+        }
+        
+        # Normalizamos las probabilidades para que entre las 5 sumen exactamente el 100%
+        total_prob = sum(mapped_probs.values())
         confianzas = {}
-        resto = 100
-
-        confianzas[emocion_predominante] = random.randint(80, 94)
-        resto -= confianzas[emocion_predominante]
-
-        emociones_restantes = [e for e in EMOCIONES if e != emocion_predominante]
-        for i, emo in enumerate(emociones_restantes):
-            if i == len(emociones_restantes) - 1:
-                confianzas[emo] = resto
-            else:
-                val = random.randint(0, resto)
-                confianzas[emo] = val
-                resto -= val
+        for emo, p in mapped_probs.items():
+            confianzas[emo] = int((p / total_prob) * 100)
+            
+        # Determinar la emoción ganadora real
+        emocion_predominante = max(confianzas, key=confianzas.get)
+        
+        # Ajustar para que la suma sea un 100% redondo (evita errores de redondeo como 99% o 101%)
+        current_sum = sum(confianzas.values())
+        if current_sum != 100:
+            confianzas[emocion_predominante] += (100 - current_sum)
 
         return jsonify({
             "rostros_detectados": len(rostros),
