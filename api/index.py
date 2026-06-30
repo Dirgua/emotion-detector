@@ -12,6 +12,7 @@ app = Flask(__name__) # Inicializa la aplicación del servidor web Flask
 CORS(app) # Aplica las reglas CORS para autorizar peticiones del frontend
 
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # Detecta la ubicación del archivo en el servidor
 cascade_path = os.path.join(BASE_DIR, "haarcascade_frontalface_default.xml") # Ruta absoluta del modelo XML
 face_cascade = cv2.CascadeClassifier(cascade_path) # Carga el clasificador base de rostros
 
