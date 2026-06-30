@@ -29,7 +29,7 @@ btnStart.addEventListener('click', async () => { // Escucha el evento de click s
     try { // Bloque de seguridad para procesar respuestas asíncronas de hardware
         errorMessage.classList.add('hidden'); // Limpia y oculta cualquier notificación de alerta previa en la UI
         capturedImage.classList.add('hidden'); // Asegura la ocultación de capturas previas guardadas en el búfer visual
-        streamInstance = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }); // Solicita acceso directo al hardware con dimensiones estándar
+        streamInstance = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }); // Solicita cámara frontal sin forzar resolución horizontal
         video.srcObject = streamInstance; // Enlaza el flujo binario obtenido de la cámara al reproductor del documento
         video.classList.remove('hidden'); // Transforma el estado del reproductor haciéndolo visible al usuario
         cameraPlaceholder.classList.add('hidden'); // Remueve de la pantalla el fondo gris o logo provisional de espera
