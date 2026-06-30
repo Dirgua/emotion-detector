@@ -54,8 +54,8 @@ def predict():
         face_roi = gray_image[y:y+h, x:x+w]
         face_roi_resized = cv2.resize(face_roi, (64, 64)) # El modelo FER+ requiere imágenes de 64x64
         
-        # Convertir a un "blob" (tensor 4D) que la red neuronal puede leer
-        blob = cv2.dnn.blobFromImage(face_roi_resized, scalefactor=1.0/255.0, size=(64, 64))
+        # Convertir a un "blob" (tensor 4D) que la red neuronal puede leer sin escalar los píxeles (0-255)
+        blob = cv2.dnn.blobFromImage(face_roi_resized, scalefactor=1.0, size=(64, 64))
         emotion_net.setInput(blob)
         
         # Inferencia: Paso frontal por la red neuronal
